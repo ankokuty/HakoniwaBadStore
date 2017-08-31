@@ -4,6 +4,9 @@
 Burp Suite Japan User Groupの初心者向け[ハンズオンイベント](https://connpass.com/event/56013/)では、BadStoreを題材として利用しました。
 オリジナルのBadStoreはisoイメージとして配布されており、実行するには仮想マシンなどからCDブートする必要があります。イベントにおいて、仮想マシンとの通信がうまくできない人が少なからずいたため、より通信トラブルが少なくなることを目的として作成しました。
 
+# ダウンロード
+[HakoniwaBadStore.jar](https://github.com/ankokuty/HakoniwaBadStore/blob/master/dist/HakoniwaBadStore.jar?raw=true)
+
 # 注意
 箱庭BadStoreは、デモやセキュリティトレーニング目的のみで利用されることを想定している、脆弱性を意図的に作り込んだセキュアではないプログラムです。
 利用によって何らかの損害が生じた場合でも一切責任を負えませんので、自己責任でご利用ください。
