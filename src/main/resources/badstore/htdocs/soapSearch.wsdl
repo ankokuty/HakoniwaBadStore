@@ -1,0 +1,117 @@
+<?xml version='1.0' encoding='UTF-8'?>
+
+<!--WSDL created by Kurt Roemer for BadStore.net v2.1, Rebuilt on 8 November, 2006 (20:15 CDT)-->
+
+<definitions name='net.badstore.soapSearch'
+   targetNamespace='http://www.badstore.net/cgi-bin/soapsearch.cgi'
+   xmlns:tns='http://www.badstore.net/cgi-bin/soapsearch.cgi'
+   xmlns:soap='http://schemas.xmlsoap.org/wsdl/soap/'
+   xmlns:http='http://schemas.xmlsoap.org/wsdl/http/'
+   xmlns:mime='http://schemas.xmlsoap.org/wsdl/mime/'
+   xmlns:xsd='http://www.w3.org/2001/XMLSchema'
+   xmlns:soapenc='http://schemas.xmlsoap.org/soap/encoding/'
+   xmlns:wsdl='http://schemas.xmlsoap.org/wsdl/'
+   xmlns='http://schemas.xmlsoap.org/wsdl/'>
+
+<documentation>
+	The WSDL file for www.BadStore.net v2.0 soapSearch web service
+</documentation>
+
+  <message name='SearchByNumRequest'>
+    <part name='sNum' type='xsd:int'/>
+  </message>
+  <message name='SearchByNumResponse'>
+	<part name="item" type="xsd:int" />
+	<part name="sdesc" type="xsd:string" />
+	<part name="ldesc" type="xsd:string" />
+	<part name="price" type="xsd:float" />
+  </message>
+
+  <message name='SearchByNameRequest'>
+    <part name='sName' type='xsd:string'/>
+  </message>
+  <message name='SearchByNameResponse'>
+	<part name="item" type="xsd:int" />
+	<part name="sdesc" type="xsd:string" />
+	<part name="ldesc" type="xsd:string" />
+	<part name="price" type="xsd:float" />
+  </message>
+
+  <message name='SearchByPriceRequest'>
+    <part name='sNum' type='xsd:float'/>
+  </message>
+  <message name='SearchByPriceResponse'>
+	<part name="item" type="xsd:int" />
+	<part name="sdesc" type="xsd:string" />
+	<part name="ldesc" type="xsd:string" />
+	<part name="price" type="xsd:float" />
+  </message>
+
+  <portType name='net.badstore.soapSearchSoap'>
+    <operation name='SearchByNum' parameterOrder='sNum'>
+      <input name='SearchByNumRequest' message='tns:SearchByNumRequest'/>
+      <output name='SearchByNumResponse' message='tns:SearchByNumResponse'/>
+    </operation>
+    <operation name='SearchByName' parameterOrder='sName'>
+      <input name='SearchByNameRequest' message='tns:SearchByNameRequest'/>
+      <output name='SearchByNameResponse' message='tns:SearchByNameResponse'/>
+    </operation>
+    <operation name='SearchByPrice' parameterOrder='sNum'>
+      <input name='SearchByPriceRequest' message='tns:SearchByPriceRequest'/>
+      <output name='SearchByPriceResponse' message='tns:SearchByPriceResponse'/>
+    </operation>
+
+  </portType>
+
+  <binding name='net.badstore.soapSearchSoap'
+      type='tns:net.badstore.soapSearchSoap'>
+    <soap:binding style='rpc' 
+      transport='http://schemas.xmlsoap.org/soap/http'/>
+    <operation name='SearchByNum'>
+      <soap:operation soapAction='' style='rpc'/>
+      <input name='SearchByNumRequest'>
+        <soap:body use='encoded'
+         namespace='http://www.badstore.net/Search'
+         encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'/>
+      </input>
+      <output name='SearchByNumResponse'>
+        <soap:body use='encoded'
+        namespace='urn:badstore:soapSearch'
+        encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'/>
+      </output>
+    </operation>
+    <operation name='SearchByName'>
+      <soap:operation soapAction='' style='rpc'/>
+      <input name='SearchByNameRequest'>
+        <soap:body use='encoded'
+         namespace='http://www.badstore.net/Search'
+         encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'/>
+      </input>
+      <output name='SearchByNameResponse'>
+        <soap:body use='encoded'
+        namespace='urn:badstore:soapSearch'
+        encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'/>
+      </output>
+    </operation>
+    <operation name='SearchByPrice'>
+      <soap:operation soapAction='' style='rpc'/>
+      <input name='SearchByPriceRequest'>
+        <soap:body use='encoded'
+         namespace='http://www.badstore.net/Search'
+         encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'/>
+      </input>
+      <output name='SearchByPriceResponse'>
+        <soap:body use='encoded'
+        namespace='urn:badstore:soapSearch'
+        encodingStyle='http://schemas.xmlsoap.org/soap/encoding/'/>
+      </output>
+    </operation>
+  </binding>
+ 
+ <service name='net.badstore.soapSearch'>
+    <port name='net.badstore.soapSearchSoap'
+      binding='tns:net.badstore.soapSearchSoap'>
+      <soap:address location='http://www.badstore.net/cgi-bin/soapsearch.cgi'/>
+    </port>
+  </service>
+</definitions>

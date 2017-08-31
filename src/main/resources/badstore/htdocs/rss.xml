@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><rss xmlns:blogChannel="http://backend.userland.com/blogChannelModule" version="2.0">
+
+<channel>
+<title>BadStore.net Hot News</title>
+<link>http://www.badstore.net/rss.xml</link>
+<description>Secure Shopping for all your biggest needs</description>
+<language>en-us</language>
+<copyright>Copyright (c) 2006 BadStore.net All rights reserved.</copyright>
+<pubDate>Wednesday, May 31, 2017 at 17:00:25</pubDate>
+<lastBuildDate>Wednesday, May 31, 2017 at 17:00:25</lastBuildDate>
+<docs>http://www.badstore.net/rss.xml</docs>
+<managingEditor>root@badstore.net</managingEditor>
+<webMaster>root@badstore.net</webMaster>
+
+<image>
+<title>BadStore.net - What's Hot</title>
+<url>http://www.badstore.net/images/badstore.jpg</url>
+<link>http://www.badstore.net/images/badstore.jpg</link>
+<width>88</width>
+<height>31</height>
+<description>Stop looking here and go buy something!!!</description>
+</image>
+
+<item>
+<title>BadStore.net Awarded Coveted Security Seal Certification 
+    (The Onion)</title>
+<description>&lt;p&gt;&lt;a href="http://www.badstore.net"&gt;&lt;img src="http://www.badstore.net/images/seal.jpg" style="padding-left: 10px; padding-right: 10px;" align="left" height="88" alt="BadStore.net wins an award" border="0" /&gt;&lt;/a&gt;The Onion - BadStore.net was awarded the highest level of assurance in all of security today - the Security Seal.&amp;nbsp  Showing that a site cannot be hacked, the Security Seal is only awarded to a few of the top sites on the Internet.&amp;nbsp  To obtain the seal, a site must prove that it can stand up to a network security scan, have a policy document that's at least bigger than the local phone book, and pony up $10,000.00 (US) annually to Seal, Inc. for administration.&amp;nbsp  BadStore.net is proud to display the seal and show customers the extent we care about their on-line security.</description>
+<guid isPermaLink="true">http://www.badstore.net/cgi-bin/badstore.cgi?action=aboutus</guid>
+</item>
+
+<item>
+<title>Today's Featured Item 
+    (BadStore.net)</title>
+<description>&lt;p&gt;&lt;a href="http://www.badstore.net"&gt;&lt;img src="http://www.badstore.net/images/1002.jpg" style="padding-left: 10px; padding-right: 10px; " align="left" height="88" alt="Buy Me!" border="0" /&gt;&lt;/a&gt;Today's featured item is one we're sure you all will love.&amp;nbsp  Perfect for celebrating politically correct holidays in a responsible way...</description>
+<guid isPermaLink="false">http://www.badstore.net/cgi-bin/badstore.cgi?action=whatsnew</guid>
+</item>
+
+<textInput>
+<title>quick finder</title>
+<description>Use the text input below to search freshmeat</description>
+<name>query</name>
+<link>http://www.badstore.net/cgi-bin/badstore.cgi?action=qsearch</link>
+</textInput>
+
+</channel>
+</rss>

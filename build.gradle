@@ -1,0 +1,22 @@
+apply plugin: 'java'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile group: 'net.portswigger.burp.extender', name: 'burp-extender-api', version: '1.7.22'
+    compile group: 'io.vertx', name: 'vertx-web', version: '3.4.1'
+    compile group: 'org.xerial', name: 'sqlite-jdbc', version: '3.18.0'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+        }
+        resources {
+            srcDir 'src/main/resources'
+        }
+    }
+}

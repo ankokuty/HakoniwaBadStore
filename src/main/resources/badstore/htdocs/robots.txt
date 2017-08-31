@@ -1,0 +1,15 @@
+# /robots.txt file for http://www.badstore.net/
+# mail webmaster@badstore.net for constructive criticism
+
+User-agent: badstore_webcrawler
+Disallow:
+
+User-agent: googlebot
+Disallow: /cgi-bin
+Disallow: /scanbot # We like Google
+
+User-agent: *
+Disallow: /backup
+Disallow: /cgi-bin
+Disallow: /supplier
+Disallow: /upload
