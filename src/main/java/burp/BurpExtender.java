@@ -22,8 +22,8 @@ public class BurpExtender implements IBurpExtender, ITab {
 			callbacks.addSuiteTab(BurpExtender.this);
 		});
 		
-		callbacks.printOutput("Hakoniwa BadStore is using " + BadStore.storeDir.getAbsolutePath() + " as a temporary directory.");
-		callbacks.printOutput("If something goes wrong, delete this directory and restart the BadStore server.");
+		callbacks.printOutput("When something goes wrong, access /cgi-bin/initdbs.cgi to reset the database.");
+		callbacks.printOutput("Or delete temporary directory (" + BadStore.storeDir.getAbsolutePath() + ") and restart the Hakoniwa BadStore server.");
 	}
 
 	@Override
