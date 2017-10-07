@@ -2,26 +2,22 @@ package burp;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Desktop;
 import java.awt.FlowLayout;
 import java.awt.event.ItemEvent;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 
-import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JToggleButton;
-import javax.swing.SwingConstants;
 
 import badstore.BadStore;
 import io.vertx.core.AsyncResult;
@@ -35,7 +31,6 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 	JToggleButton button;
 	BadStore badstore;
 	JLabel message;
-	JButton link;
 	IBurpExtenderCallbacks callbacks;
 
 	static String DEFAULT_HOST = "127.0.0.1";
@@ -48,7 +43,7 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 		super();
 		this.callbacks = callbacks;
 		JLabel labelPort = new JLabel("Port:");
-		JLabel labelHost = new JLabel("Host:");
+		JLabel labelHost = new JLabel("Interface:");
 		textPort = new JTextField(Integer.toString(DEFAULT_PORT), 5);
 		comboHost = new JComboBox<String>();
 		message = new JLabel("");
@@ -95,12 +90,10 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 					disableComponents();
 					new Thread(() -> {
 						try {
-							link.setVisible(false);
 							message.setText("Initializing data ... ");
 							badstore = new BadStore(port, host, table);
 							badstore.startServer(BadstorePanel.this);
 							message.setText("");
-							link.setVisible(true);
 						} catch (Exception e) {
 							callbacks.printError(e.getMessage());
 							throw new RuntimeException(e);
@@ -122,21 +115,6 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 			}
 		});
 
-		link = new JButton();
-		link.setHorizontalAlignment(SwingConstants.LEFT);
-		link.setBorderPainted(false);
-		link.setOpaque(false);
-		link.setBackground(Color.WHITE);
-		link.addActionListener(v -> {
-			if (Desktop.isDesktopSupported()) {
-				try {
-					Desktop.getDesktop().browse(new URI(makeURL()));
-				} catch (Exception ignore) {
-				}
-			}
-		});
-		link.setVisible(false);
-
 		JPanel panel = new JPanel();
 		JScrollPane sp = new JScrollPane(table);
 
@@ -147,7 +125,6 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 		panel.add(comboHost);
 		panel.add(button);
 		panel.add(message);
-		panel.add(link);
 
 		setLayout(new BorderLayout());
 		add(panel, BorderLayout.PAGE_START);
@@ -163,25 +140,11 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 		}
 	}
 
-	private String makeURL() {
-		int port = Integer.parseInt(textPort.getText());
-		String host = (String) comboHost.getSelectedItem();
-		if (port == 80) {
-			return "http://" + host + "/";
-		} else {
-			return "http://" + host + ":" + Integer.toString(port) + "/";
-		}
-	}
-
 	private void disableComponents() {
-		String url = makeURL();
 		button.setText("Running");
 		button.setSelected(true);
 		textPort.setEnabled(false);
 		comboHost.setEnabled(false);
-		link.setText("<HTML>Open <FONT color=\"#000099\"><U>" + url + "</U></FONT> in browser</HTML>");
-		link.setToolTipText(url);
-		link.setVisible(true);
 	}
 
 	private void enableComponents() {
@@ -189,7 +152,6 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 		button.setSelected(false);
 		textPort.setEnabled(true);
 		comboHost.setEnabled(true);
-		link.setVisible(false);
 	}
 
 	@Override
