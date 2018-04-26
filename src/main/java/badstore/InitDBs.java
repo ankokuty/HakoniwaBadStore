@@ -54,6 +54,13 @@ public class InitDBs extends CGI implements Handler<RoutingContext> {
 			} else if (!storeDir.isDirectory()) {
 				throw new RuntimeException(storeDir.toString() + " is not directory.");
 			}
+			
+			File uploadDir = BadStore.uploadDir;
+			if (!uploadDir.exists()) {
+				uploadDir.mkdirs();
+			} else if (!uploadDir.isDirectory()) {
+				throw new RuntimeException(uploadDir.toString() + " is not directory.");
+			}
 
 			File guestbookdb = BadStore.guestbookdb;
 			if (guestbookdb.exists()) {

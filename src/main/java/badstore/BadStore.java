@@ -1,13 +1,21 @@
 package badstore;
 
+import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
+import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
+import static io.netty.handler.codec.http.HttpResponseStatus.NOT_IMPLEMENTED;
+import static io.netty.handler.codec.http.HttpResponseStatus.SEE_OTHER;
+
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URLDecoder;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -16,10 +24,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 
 import javax.xml.bind.DatatypeConverter;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -35,13 +46,16 @@ import org.w3c.dom.NodeList;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.ext.web.Cookie;
+import io.vertx.ext.web.FileUpload;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CookieHandler;
 
 public class BadStore extends CGI {
@@ -49,22 +63,22 @@ public class BadStore extends CGI {
 	String host;
 	HttpServer server;
 	Handler<RoutingContext> logger;
+	Vertx vertx;
 
-	public static File storeDir;
-	static File guestbookdb;
-	static File rssfile;
-	static File dbfile;
-
+	static String tmpdir = System.getProperty("java.io.tmpdir");
+	public static File storeDir = new File(tmpdir, ".badstore/data");
+	static File guestbookdb = new File(storeDir, "guestbookdb");
+	static File rssfile = new File(storeDir, "rss.xml");
+	static File dbfile = new File(storeDir, "badstore.db");
+	static File orderdb_bak = new File(storeDir, "orderdb.bak");
+	static File userdb_bak = new File(storeDir, "userdb.bak");
+	static File uploadDir = new File(storeDir, "uploads");
+	static File uploadTmpDir = new File(storeDir, "file-uploads");
 	static {
 		try {
 			Class.forName("org.sqlite.JDBC");
 		} catch (ClassNotFoundException ignore) {
 		}
-		String tmpdir = System.getProperty("java.io.tmpdir");
-		storeDir = new File(tmpdir, ".badstore/data");
-		guestbookdb = new File(storeDir, "guestbookdb");
-		rssfile = new File(storeDir, "rss.xml");
-		dbfile = new File(storeDir, "badstore.db");
 	}
 
 	public BadStore(int port, String host, Handler<RoutingContext> logger) {
@@ -84,7 +98,7 @@ public class BadStore extends CGI {
 
 	public void startServer(Handler<AsyncResult<HttpServer>> error) {
 		System.setProperty("vertx.cacheDirBase", storeDir.getAbsolutePath());
-		Vertx vertx = Vertx.vertx();
+		vertx = Vertx.vertx();
 
 		server = vertx.createHttpServer();
 
@@ -92,6 +106,7 @@ public class BadStore extends CGI {
 		router.route().handler(logger);
 
 		router.route().handler(CookieHandler.create());
+		router.route().handler(BodyHandler.create(uploadTmpDir.getAbsolutePath()).setMergeFormAttributes(true));
 		router.route(HttpMethod.GET, "/cgi-bin/badstore.cgi").handler(context -> {
 			HttpServerResponse response = context.response();
 			response.setChunked(true);
@@ -128,6 +143,15 @@ public class BadStore extends CGI {
 				case "test":
 					test(context);
 					break;
+				case "admin":
+					admin(context);
+					break;
+				case "adminportal":
+					adminportal(context);
+					break;
+				case "supplierlogin":
+					supplierlogin(context);
+					break;
 				default:
 					home(context);
 				}
@@ -163,6 +187,18 @@ public class BadStore extends CGI {
 				case "moduser":
 					moduser(context);
 					break;
+				case "adminportal":
+					adminportal(context);
+					break;
+				case "soapupdates":
+					soapupdates(context);
+					break;
+				case "supplierportal":
+					supplierportal(context);
+					break;
+				case "supupload":
+					supupload(context);
+					break;
 				default:
 					home(context);
 				}
@@ -170,13 +206,51 @@ public class BadStore extends CGI {
 				home(context);
 			}
 		});
+		router.route("/backup/*").handler(new BackupFileHandler());
 
 		router.route(HttpMethod.GET, "/cgi-bin/bsheader.cgi").handler(new BSHeader());
 		router.route(HttpMethod.GET, "/cgi-bin/initdbs.cgi").handler(new InitDBs());
 		router.route(HttpMethod.GET, "/rss.xml").handler(context -> {
 			context.response().sendFile(rssfile.getAbsolutePath());
 		});
-		router.route("/*").handler(new ResourceFileHandler());
+		router.route("/*").handler(new ResourceFileHandler()).failureHandler(context -> {
+			try {
+				HttpServerRequest request = context.request();
+				HttpServerResponse response = context.response();
+				Throwable failure = context.failure();
+				if (failure != null) {
+					response.setStatusCode(INTERNAL_SERVER_ERROR.code());
+					ByteArrayOutputStream out = new ByteArrayOutputStream();
+					failure.printStackTrace(new PrintStream(out));
+					response.write(Buffer.buffer(out.toByteArray()));
+					response.end();
+				} else {
+					response.setStatusCode(context.statusCode());
+					if (context.statusCode() == NOT_FOUND.code()) {
+						String path = request.uri();
+						response.setChunked(true);
+						response.write("<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n");
+						response.write("<HTML><HEAD>\n");
+						response.write("<TITLE>404 Not Found</TITLE>\n");
+						response.write("</HEAD><BODY>\n");
+						response.write("<H1>Not Found</H1>\n");
+						response.write(
+								"The requested URL " + simple_escape(path) + " was not found on this server.<P>\n");
+						response.write("<HR>\n");
+						response.write("<ADDRESS>Apache/1.3.28 Server at " + simple_escape(host) + " Port "
+								+ Integer.toString(port) + "</ADDRESS>\n");
+						response.write("</BODY></HTML>\n");
+						response.putHeader("Server", "Server: Apache/1.3.28 (Unix) mod_ssl/2.8.15 OpenSSL/0.9.7c");
+						response.putHeader("Content-Type", "Content-Type: text/html; charset=iso-8859-1");
+						response.end();
+					} else {
+						context.next();
+					}
+				}
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
 		server.requestHandler(router::accept).listen(port, host, error);
 		System.err.println("Starting up badstore server on: http://" + host + ":" + port);
 	}
@@ -331,8 +405,11 @@ public class BadStore extends CGI {
 		try {
 			connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
 			statement = connection.createStatement();
-			if(!squery.matches("[0-9]+")) {
-				squery = "'" + squery +"'";
+			if (squery == null) {
+				squery = "";
+			}
+			if (!squery.matches("[0-9]+")) {
+				squery = "'" + squery + "'";
 			}
 			String sql = "SELECT itemnum, sdesc, ldesc, price FROM itemdb WHERE " + squery
 					+ " COLLATE nocase IN (itemnum,sdesc,ldesc)";
@@ -351,13 +428,13 @@ public class BadStore extends CGI {
 				response.write("<HR>");
 				response.write(start_form("/cgi-bin/badstore.cgi?action=cartadd"));
 				response.write("<TABLE BORDER=1>");
-				response.write(tr(th("ItemNum") + th("Item") + th("Description") + th("Price") + th("Image")
-						+ th("Add to Cart")));
+				response.write(
+						tr(th("ItemNum"), th("Item"), th("Description"), th("Price"), th("Image"), th("Add to Cart")));
 				do {
 					String image = "/images/" + rs.getInt(1) + ".jpg";
-					response.write(tr(td(Integer.toString(rs.getInt(1))) + td(rs.getString(2)) + td(rs.getString(3))
-							+ td(String.format("$%.2f", rs.getFloat(4)))
-							+ td("align=\"CENTER\"", "<IMG SRC=" + image + ">") + td("align=\"CENTER\"",
+					response.write(tr(td(Integer.toString(rs.getInt(1))), td(rs.getString(2)), td(rs.getString(3)),
+							td(String.format("$%.2f", rs.getFloat(4))),
+							td("align=\"CENTER\"", "<IMG SRC=" + image + ">"), td("align=\"CENTER\"",
 									"<INPUT type=checkbox name=\"cartitem\" value=" + rs.getInt(1) + ">")));
 				} while (rs.next());
 				response.write("</TABLE>\n\n");
@@ -393,12 +470,384 @@ public class BadStore extends CGI {
 	/*********
 	 * Admin *
 	 *********/
-	// TODO
+	public void admin(RoutingContext context) {
+		HttpServerResponse response = context.response();
+
+		printHttpHeaders(response);
+		response.write(header());
+		response.write(start_html("Private Administration Portal for BadStore.net"));
+		response.write(h1("Secret Administration Menu"));
+		response.write(hr());
+		response.write(p());
+		response.write(start_form("/cgi-bin/badstore.cgi?action=adminportal"));
+		response.write(p());
+		response.write(h2("Where do you want to be taken today?"));
+		response.write(popup_menu("admin",
+				new String[] { "View Sales Reports", "Reset User Password", "Add User", "Delete User",
+						"Show Current Users", "Troubleshooting", "Backup Databases",
+						"Supply Chain:  Manage Open Orders", "Supply Chain:  Place Order with Supplier",
+						"Supply Chain:  Check Credit with Supplier", "Supply Chain:  Check Status of RMA" }));
+		response.write(submit("Do It"));
+		response.write(end_form());
+		response.write(footer());
+		response.write(end_html());
+		response.end();
+	}
 
 	/****************
 	 * Admin Portal *
 	 ****************/
-	// TODO
+	public void adminportal(RoutingContext context) {
+		HttpServerRequest request = context.request();
+		HttpServerResponse response = context.response();
+
+		printHttpHeaders(response);
+		response.write(header());
+		response.write(start_html("Private Administration Portal for BadStore.net"));
+		response.write(h1("Secret Administration Portal"));
+		response.write(hr());
+		response.write(p());
+
+		String aquery = request.getFormAttribute("admin");
+
+		/* Read SSOid Cookie */
+		Cookie stemp = context.getCookie("SSOid");
+		String fullname = null;
+		String role = null;
+
+		String ssoid = new String(Base64.getDecoder().decode(stemp.getValue()));
+		String[] s_cookievalue = ssoid.split(":");
+		fullname = s_cookievalue[2];
+		if (fullname.equals("")) {
+			fullname = "{Unregistered User}";
+		}
+		role = s_cookievalue[3];
+		/* Check SSO Cookie for Admin Role */
+		if (role.equals("A")) {
+			/* Connect to the SQL Database */
+			Connection connection = null;
+			Statement statement = null;
+			try {
+				connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
+				statement = connection.createStatement();
+
+				/* Prepare the Sales Report */
+				if (aquery.equals("View Sales Reports")) {
+					String sql = "SELECTs * FROM orderdb ORDER BY 'orderdate','ordertime'";
+					ResultSet rs = statement.executeQuery(sql);
+
+					response.write(h2("<Center>BadStore.net Sales Report"));
+					response.write(p());
+					response.write(getdate());
+					response.write("</center><HR><TABLE BORDER=1>");
+					response.write(tr(th("Date"), th("Time"), th("Cost"), th("Count"), th("Items"), th("Account"),
+							th("IP"), th("Paid"), th("Credit_Card_Used"), th("ExpDate")));
+
+					while (rs.next()) {
+						String ccard = rs.getString(10);
+						ccard = ccard.replaceAll("(\\d\\d\\d\\d)[\\-\\s]?", "$1-");
+						ccard = ccard.replaceAll("-$", "");
+						response.write(
+								tr(td(font("arial", -2, rs.getString(2))), td(font("arial", -2, rs.getString(3))),
+										td(font("arial", -2, rs.getString(4))), td(font("arial", -2, rs.getString(5))),
+										td(font("arial", -2, rs.getString(6))), td(font("arial", -2, rs.getString(7))),
+										td(font("arial", -2, rs.getString(8))), td(font("arial", -2, rs.getString(9))),
+										td(font("arial", -2, ccard)), td(font("arial", -2, rs.getString(11)))));
+					}
+					response.write("</TABLE>\n\n");
+				} else if (aquery.equals("Reset User Password")) {
+					/* Reset User Password */
+					PreparedStatement sth = null;
+					try {
+						/* Prepare and Execute SQL Query */
+						sth = connection.prepareStatement("SELECT email FROM userdb");
+						ResultSet rs = sth.executeQuery();
+						ArrayList<String> ids = new ArrayList<>();
+						while (rs.next()) {
+							ids.add(rs.getString(1));
+						}
+
+						response.write(start_form("/cgi-bin/badstore.cgi?action=moduser"));
+						response.write(p());
+						response.write("Reset password for: ");
+						response.write(popup_menu("email", ids.toArray(new String[0])));
+						response.write(submit("DoMods", "Reset User Password"));
+						response.write(end_form());
+					} finally {
+						/* Close statement handles */
+						try {
+							if (sth != null) {
+								sth.close();
+							}
+						} catch (Exception ignore) {
+						}
+					}
+				} else if (aquery.equals("Troubleshooting")) {
+					// Not implement
+					context.fail(NOT_IMPLEMENTED.code());
+					return;
+				} else if (aquery.equals("Add User")) {
+					/* Add a User */
+
+					response.write(start_form("/cgi-bin/badstore.cgi?action=moduser"));
+					response.write("Email Address:  ");
+					response.write(textfield("email", 40));
+					response.write(p());
+					response.write(hidden("password", md5Hex("Welcome")));
+					response.write("Password Hint:  ");
+					response.write(popup_menu("pwdhint",
+							new String[] { "green", "blue", "red", "orange", "purple", "yellow" }));
+					response.write(p());
+					response.write("Full Name:  ");
+					response.write(textfield("fullname", 50));
+					response.write(p());
+					response.write("Role:  ");
+					response.write(textfield("role", 1));
+					response.write(p());
+					response.write(submit("DoMods", "Add User"));
+					response.write(reset());
+					response.write(end_form());
+					response.write(hr());
+				} else if (aquery.equals("Delete User")) {
+					/* Delete User */
+
+					/* Prepare and Execute SQL Query */
+					PreparedStatement sth = null;
+					try {
+						sth = connection.prepareStatement("SELECT email FROM userdb");
+						ResultSet rs = sth.executeQuery();
+
+						ArrayList<String> ids = new ArrayList<>();
+						while (rs.next()) {
+							ids.add(rs.getString(1));
+						}
+
+						response.write(start_form("/cgi-bin/badstore.cgi?action=moduser"));
+						response.write(p());
+						response.write("Delete User: ");
+						response.write(popup_menu("email", ids.toArray(new String[0])));
+						response.write(submit("DoMods", "Delete User"));
+						response.write(end_form());
+					} finally {
+						/* Close statement handles */
+						try {
+							if (sth != null) {
+								sth.close();
+							}
+						} catch (Exception ignore) {
+						}
+					}
+				} else if (aquery.equals("Show Current Users")) {
+					/* Show Current Users */
+
+					/* Prepare and Execute SQL Query */
+					PreparedStatement sth = null;
+					try {
+						sth = connection.prepareStatement("SELECT * FROM userdb");
+						ResultSet rs = sth.executeQuery();
+
+						response.write("<TABLE BORDER=1>");
+						response.write(
+								tr(th("Email Address"), th("Password"), th("Pass Hint"), th("Full Name"), th("Role")));
+
+						while (rs.next()) {
+							response.write(tr(td(font("Arial", -2, rs.getString(1))),
+									td(font("Arial", -2, rs.getString(2))), td(font("Arial", -2, rs.getString(3))),
+									td(font("Arial", -2, rs.getString(4))), td(font("Arial", -2, rs.getString(5)))));
+						}
+						response.write("</TABLE>");
+					} finally {
+						/* Close statement handles */
+						try {
+							if (sth != null) {
+								sth.close();
+							}
+						} catch (Exception ignore) {
+						}
+					}
+
+				} else if (aquery.equals("Backup Databases")) {
+					/* Backup the Tables */
+
+					Statement stmt = null;
+					PrintStream out = null;
+					try {
+						out = new PrintStream(new FileOutputStream(orderdb_bak, false));
+						stmt = connection.createStatement();
+						ResultSet rs = stmt.executeQuery("SELECT * FROM orderdb");
+						while (rs.next()) {
+							out.print(rs.getInt(1));
+							out.print("\t");
+							out.print(rs.getString(2));
+							out.print("\t");
+							out.print(rs.getString(3));
+							out.print("\t");
+							out.print(rs.getString(4));
+							out.print("\t");
+							out.print(rs.getInt(5));
+							out.print("\t");
+							out.print(rs.getString(6));
+							out.print("\t");
+							out.print(rs.getString(7));
+							out.print("\t");
+							out.print(rs.getString(8));
+							out.print("\t");
+							out.print(rs.getString(9));
+							out.print("\t");
+							out.print(rs.getString(10));
+							out.print("\t");
+							out.println(rs.getString(11));
+						}
+					} catch (FileNotFoundException e) {
+						throw new RuntimeException(e);
+					} finally {
+						/* Close statement handles */
+						try {
+							if (stmt != null) {
+								stmt.close();
+							}
+						} catch (Exception ignore) {
+						}
+						try {
+							if (out != null) {
+								out.close();
+							}
+						} catch (Exception ignore) {
+						}
+					}
+
+					try {
+						out = new PrintStream(new FileOutputStream(userdb_bak, false));
+						stmt = connection.createStatement();
+						ResultSet rs = stmt.executeQuery("SELECT * FROM userdb");
+						while (rs.next()) {
+							out.print(rs.getString(1));
+							out.print("\t");
+							out.print(rs.getString(2));
+							out.print("\t");
+							out.print(rs.getString(3));
+							out.print("\t");
+							out.print(rs.getString(4));
+							out.print("\t");
+							out.println(rs.getString(5));
+						}
+					} catch (FileNotFoundException e) {
+						throw new RuntimeException(e);
+					} finally {
+						/* Close statement handles */
+						try {
+							if (stmt != null) {
+								stmt.close();
+							}
+						} catch (Exception ignore) {
+						}
+						try {
+							if (out != null) {
+								out.close();
+							}
+						} catch (Exception ignore) {
+						}
+					}
+					response.write(h2("Database backup compete - files in http://" + host + ":" + Integer.toString(port)
+							+ "/backup/"));
+				} else if (aquery.equals("Supply Chain:  Place Order with Supplier")) {
+					/* Place Order with Supplier */
+
+					response.write(start_form("/cgi-bin/badstore.cgi?action=soapupdates"));
+					response.write(b(" Supply Chain Options"));
+					response.write(p());
+					response.write(" Automatic Stock Replenishment");
+					response.write("<INPUT type=checkbox checked name='autorep' value=>");
+					response.write("   Use Single Sign On");
+					response.write("<INPUT type=checkbox checked name='sso' value=>");
+					response.write(hr());
+					response.write(p());
+
+					response.write(h2("Place Special Order with Supplier"));
+					response.write(p());
+					response.write(start_form("/cgi-bin/badstore.cgi?action=soapupdates"));
+					response.write("Supplier: ");
+					response.write(popup_menu("supplier", new String[] { "MegaSupplier.net" }));
+					response.write("   SKU: ");
+					response.write(textfield("sku", 6, 10));
+					response.write("   Quantity: ");
+					response.write(textfield("qty", 3, 5));
+					response.write("Status: ");
+					response.write(popup_menu("ostatus", new String[] { "normal", "URGENT", "DropShip", "CALL" }));
+					response.write(p());
+					response.write("   Comments: ");
+					response.write(textfield("comments", 50, 100));
+					response.write(p());
+					response.write(br());
+					response.write("<Center>");
+					response.write(submit("SOAPUp", "Submit Special Order"));
+					response.write("   ");
+					response.write(reset());
+					response.write("</Center>");
+					response.write(end_form());
+					response.write(hr());
+					response.write(p());
+					response.write("Available Credit:    $57.40     Credit Extended :     $500,000.00 US");
+					response.write(p());
+					response.write(hr());
+				} else if (aquery.equals("Supply Chain:  Manage Open Orders")) {
+					// Not implement
+					context.fail(NOT_IMPLEMENTED.code());
+					return;
+				} else if (aquery.equals("Supply Chain:  Check Credit with Supplier")) {
+					// Not implement
+					context.fail(NOT_IMPLEMENTED.code());
+					return;
+				} else if (aquery.equals("Supply Chain:  Check Status of RMA")) {
+					/* Check RMA Status */
+
+					response.write(h2("Check RMA Status:"));
+					response.write(p());
+					response.write(start_form("/cgi-bin/badstore.cgi?action=soapupdates"));
+					response.write(" Enter RMA # or Keywords: ");
+					response.write(textfield("rma", 40, 100));
+					response.write(p());
+					response.write(submit("SOAPUp", "Check RMA"));
+					response.write(end_form());
+				}
+			} catch (SQLException e) {
+				throw new RuntimeException(e);
+			} catch (NullPointerException ignore) {
+			} finally {
+				/* Disconnect from the databases */
+				try {
+					if (statement != null) {
+						statement.close();
+					}
+				} catch (SQLException ignore) {
+				}
+				try {
+					if (connection != null) {
+						connection.close();
+					}
+				} catch (SQLException ignore) {
+				}
+			}
+		} else {
+			/* Not an Admin user */
+			String ipaddr = request.remoteAddress().host();
+			response.write(h2("Error - " + fullname + " is not an Admin!"));
+			response.write(hr());
+			response.write("Something weird happened - you tried to access the ");
+			response.write("Adminstrative Portal, but you are not an Administrative User.");
+			response.write(p());
+			response.write("You must login as an Admin to access this resource.");
+			response.write(p());
+			response.write("Use your browser's Back button and go to Login.");
+			response.write(p());
+			response.write(p());
+			response.write(p());
+			response.write(h3("(If you're trying to hack - I know who you are:   " + ipaddr));
+		}
+		response.write(footer());
+		response.write(end_html());
+		response.end();
+	}
 
 	/*************
 	 * Guestbook *
@@ -419,10 +868,9 @@ public class BadStore extends CGI {
 		response.write(hr());
 		response.write("<TABLE BORDER=0 CELLLPADDING=10>");
 		response.write(start_form("/cgi-bin/badstore.cgi?action=doguestbook"));
-		response.write(tr(td("Your Name:") + td("<INPUT TYPE=text NAME=name SIZE=30>")));
-		response.write(tr(td("Email:") + td("<INPUT TYPE=text NAME=email SIZE=40>")));
-		response.write(
-				tr(td("valign=\"TOP\"", "Comments:") + td("<TEXTAREA NAME=comments COLS=60 ROWS=4></TEXTAREA>")));
+		response.write(tr(td("Your Name:"), td("<INPUT TYPE=text NAME=name SIZE=30>")));
+		response.write(tr(td("Email:"), td("<INPUT TYPE=text NAME=email SIZE=40>")));
+		response.write(tr(td("valign=\"TOP\"", "Comments:"), td("<TEXTAREA NAME=comments COLS=60 ROWS=4></TEXTAREA>")));
 		response.write("</TABLE>\n<HR>\n");
 		response.write("<Center><INPUT TYPE=submit VALUE=\"Add Entry\">  <INPUT TYPE=reset></Center>");
 		response.write(p());
@@ -438,30 +886,27 @@ public class BadStore extends CGI {
 	public void doguestbook(RoutingContext context) {
 		HttpServerRequest request = context.request();
 		HttpServerResponse response = context.response();
-		request.setExpectMultipart(true);
-		request.endHandler(v -> {
-			String timestamp = getdate();
-			String name = request.getFormAttribute("name");
-			String email = request.getFormAttribute("email");
-			String comments = request.getFormAttribute("comments");
-			if (comments != null) {
-				comments = comments.trim();
-			}
+		String timestamp = getdate();
+		String name = request.getFormAttribute("name");
+		String email = request.getFormAttribute("email");
+		String comments = request.getFormAttribute("comments");
+		if (comments != null) {
+			comments = comments.trim();
+		}
 
-			saveFormData(guestbookdb, timestamp, name, email, comments);
+		saveFormData(guestbookdb, timestamp, name, email, comments);
 
-			printHttpHeaders(response);
-			response.write(header());
-			response.write(start_html("Welcome to the BadStore.net Guestbook"));
-			response.write(h1("Guestbook"));
-			response.write(hr());
+		printHttpHeaders(response);
+		response.write(header());
+		response.write(start_html("Welcome to the BadStore.net Guestbook"));
+		response.write(h1("Guestbook"));
+		response.write(hr());
 
-			response.write(readFormData(guestbookdb));
+		response.write(readFormData(guestbookdb));
 
-			response.write(footer());
-			response.write(end_html());
-			response.end();
-		});
+		response.write(footer());
+		response.write(end_html());
+		response.end();
 	}
 
 	private void saveFormData(File dataFile, String timestamp, String name, String email, String comments) {
@@ -528,71 +973,69 @@ public class BadStore extends CGI {
 	 ***************/
 	public void cartadd(RoutingContext context) {
 		HttpServerRequest request = context.request();
-		request.setExpectMultipart(true);
-		request.endHandler(v -> {
-			String sessid = Long.toString((new Date().getTime() / 1000));
-			int cartitems = 0;
-			float cartcost = 0;
-			String cartitem = request.getFormAttribute("cartitem");
+		String sessid = Long.toString((new Date().getTime() / 1000));
+		int cartitems = 0;
+		float cartcost = 0;
+		String cartitem = request.getFormAttribute("cartitem");
 
-			if (cartitem == null || cartitem.equals("")) {
-				HttpServerResponse response = context.response();
-				String ipaddr = "";
-				printHttpHeaders(response);
-				response.write(start_html("BadStore.net - Cart Error"));
-				response.write(header());
-				response.write(h1("Cart Error - Zero Items"));
-				response.write("<hr>");
-				response.write("Something weird happened - you tried to add no items to the cart!");
-				response.write("<p>");
-				response.write("Use your browser's Back button and try again.");
-				response.write("<p>");
-				response.write("<p>");
-				response.write("<p>");
-				response.write(h3("(If you're trying to hack - I know who you are:   " + ipaddr + ")"));
-				response.write(footer());
-				response.write(end_html());
-				response.end();
-			} else {
-				Connection connection = null;
-				Statement statement = null;
+		if (cartitem == null || cartitem.equals("")) {
+			HttpServerResponse response = context.response();
+			String ipaddr = request.remoteAddress().host();
+
+			printHttpHeaders(response);
+			response.write(start_html("BadStore.net - Cart Error"));
+			response.write(header());
+			response.write(h1("Cart Error - Zero Items"));
+			response.write("<hr>");
+			response.write("Something weird happened - you tried to add no items to the cart!");
+			response.write("<p>");
+			response.write("Use your browser's Back button and try again.");
+			response.write("<p>");
+			response.write("<p>");
+			response.write("<p>");
+			response.write(h3("(If you're trying to hack - I know who you are:   " + ipaddr + ")"));
+			response.write(footer());
+			response.write(end_html());
+			response.end();
+		} else {
+			Connection connection = null;
+			Statement statement = null;
+			try {
+				int _items = cartitems + 1;
+				connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
+				statement = connection.createStatement();
+				String sql = "SELECT price FROM itemdb WHERE itemnum = '" + cartitem + "'";
+				ResultSet rs = statement.executeQuery(sql);
+				if (!rs.next()) {
+					throw new RuntimeException("Item number not found: ");
+				} else {
+					float cost = cartcost + rs.getFloat(1);
+					// Create initial CartID cookie
+					String cookievalue = String.join(":",
+							new String[] { sessid, Integer.toString(_items), Float.toString(cost), cartitem });
+					Cookie cartcookie = Cookie.cookie("CartID", url_encode(cookievalue));
+					cartcookie.setPath("/");
+					context.addCookie(cartcookie);
+				}
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			} finally {
 				try {
-					int _items = cartitems + 1;
-					connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
-					statement = connection.createStatement();
-					String sql = "SELECT price FROM itemdb WHERE itemnum = '" + cartitem + "'";
-					ResultSet rs = statement.executeQuery(sql);
-					if (!rs.next()) {
-						throw new RuntimeException("Item number not found: ");
-					} else {
-						float cost = cartcost + rs.getFloat(1);
-						// Create initial CartID cookie
-						String cookievalue = String.join(":",
-								new String[] { sessid, Integer.toString(_items), Float.toString(cost), cartitem });
-						Cookie cartcookie = Cookie.cookie("CartID", cookievalue);
-						cartcookie.setPath("/");
-						context.addCookie(cartcookie);
+					if (statement != null) {
+						statement.close();
 					}
-				} catch (Exception e) {
-					context.fail(e);
-				} finally {
-					try {
-						if (statement != null) {
-							statement.close();
-						}
-					} catch (SQLException ignore) {
+				} catch (SQLException ignore) {
+				}
+				try {
+					if (connection != null) {
+						connection.close();
 					}
-					try {
-						if (connection != null) {
-							connection.close();
-						}
-					} catch (SQLException ignore) {
-					}
+				} catch (SQLException ignore) {
 				}
 			}
+		}
 
-			home(context);
-		});
+		home(context);
 	}
 
 	/***************
@@ -601,104 +1044,100 @@ public class BadStore extends CGI {
 	public void order(RoutingContext context) {
 		HttpServerRequest request = context.request();
 		HttpServerResponse response = context.response();
-		request.setExpectMultipart(true);
-		request.endHandler(v -> {
+		/* Read CartID Cookie */
+		int items = 0;
+		String cartitems = "";
+		String price = "";
+		String id = "";
+		try {
+			Cookie temp = context.getCookie("CartID");
+			String[] cookievalue = URLDecoder.decode(temp.getValue(), "UTF-8").split(":");
+			id = cookievalue[0];
+			items = Integer.parseInt(cookievalue[1]);
+			float cost = Float.parseFloat(cookievalue[2]);
+			price = String.format("$%.2f", cost);
+			String[] tmp_cartitems = new String[cookievalue.length - 3];
+			System.arraycopy(cookievalue, 3, tmp_cartitems, 0, tmp_cartitems.length);
+			cartitems = String.join(",", tmp_cartitems);
+		} catch (Exception ignore) {
+		}
+		String email = request.getFormAttribute("email");
+		String ipaddr = request.remoteAddress().host();
 
-			/* Read CartID Cookie */
-			int items = 0;
-			String cartitems = "";
-			String price = "";
-			String id = "";
+		/* Expire the Cookie */
+		Cookie cartcookie = Cookie.cookie("CartID", "");
+		cartcookie.setMaxAge(0);
+		cartcookie.setPath("/");
+		context.addCookie(cartcookie);
+
+		/* Get the hidden fields */
+		String ccard = request.getFormAttribute("ccard");
+		String expdate = request.getFormAttribute("expdate");
+
+		printHttpHeaders(response);
+		response.write(header());
+		response.write(start_html("BadStore.net - Place Order"));
+		response.write(h1("Your Order Has Been Placed") + "<hr><p>");
+
+		/* Check for Empty Cart */
+		if (items < 1) {
+			response.write(h2("You have no items in your cart.") + "<p>");
+			response.write("Order something already!<p>");
+		} else {
+			/* Connect to the SQL Database */
+			Connection connection = null;
+			Statement statement = null;
 			try {
-				Cookie temp = context.getCookie("CartID");
-				String[] cookievalue = URLDecoder.decode(temp.getValue(), "UTF-8").split(":");
-				id = cookievalue[0];
-				items = Integer.parseInt(cookievalue[1]);
-				float cost = Float.parseFloat(cookievalue[2]);
-				price = String.format("$%.2f", cost);
-				String[] tmp_cartitems = new String[cookievalue.length - 3];
-				System.arraycopy(cookievalue, 3, tmp_cartitems, 0, tmp_cartitems.length);
-				cartitems = String.join(",", tmp_cartitems);
-			} catch (Exception ignore) {
-			}
-			String email = request.getFormAttribute("email");
-			String ipaddr = "";
+				connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
+				statement = connection.createStatement();
 
-			/* Expire the Cookie */
-			Cookie cartcookie = Cookie.cookie("CartID", "");
-			cartcookie.setMaxAge(0);
-			cartcookie.setPath("/");
-			context.addCookie(cartcookie);
+				/* Add ordered items to Order Database */
+				statement.executeUpdate(
+						"INSERT INTO orderdb (sessid, orderdate, ordertime, ordercost, orderitems, itemlist, accountid, ipaddr, cartpaid, ccard, expdate) VALUES ('"
+								+ id + "', DATE(), TIME(), '" + price + "', '" + items + "', '" + cartitems + "', '"
+								+ email + "', '" + ipaddr + "', 'Y', '" + ccard + "', '" + expdate + "')");
 
-			/* Get the hidden fields */
-			String ccard = request.getFormAttribute("ccard");
-			String expdate = request.getFormAttribute("expdate");
+				response.write(h2("You have just bought the following:") + "<p>");
 
-			printHttpHeaders(response);
-			response.write(header());
-			response.write(start_html("BadStore.net - Place Order"));
-			response.write(h1("Your Order Has Been Placed") + "<hr><p>");
-
-			/* Check for Empty Cart */
-			if (items < 1) {
-				response.write(h2("You have no items in your cart.") + "<p>");
-				response.write("Order something already!<p>");
-			} else {
-				/* Connect to the SQL Database */
-				Connection connection = null;
-				Statement statement = null;
+				/* Prepare and Execute SQL Query */
+				ResultSet rs = statement.executeQuery(
+						"SELECT itemnum, sdesc, ldesc, price FROM itemdb WHERE itemnum IN (" + cartitems + ")");
+				if (!rs.next()) {
+					throw new RuntimeException("Item number not found:");
+				} else {
+					/* Read the matching records and print them out */
+					response.write("<TABLE BORDER=1>");
+					response.write(tr(th("ItemNum"), th("Item"), th("Description"), th("Price"), th("Image")));
+					do {
+						String image = "/images/" + rs.getInt(1) + ".jpg";
+						response.write(tr(td(Integer.toString(rs.getInt(1))), td(rs.getString(2)), td(rs.getString(3)),
+								td(String.format("$%.2f", rs.getFloat(4))),
+								td("align=\"CENTER\"", "<IMG SRC=" + image + ">")));
+					} while (rs.next());
+					response.write("</TABLE>\n\n" + "<p>");
+					response.write(h3("Purchased:   " + items + " items at " + price) + "<p>");
+					response.write("<Center><i>Thank you for shopping at BadStore.net!</i></Center>");
+				}
+				response.write(footer());
+				response.write(end_html());
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			} finally {
 				try {
-					connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
-					statement = connection.createStatement();
-
-					/* Add ordered items to Order Database */
-					statement.executeUpdate(
-							"INSERT INTO orderdb (sessid, orderdate, ordertime, ordercost, orderitems, itemlist, accountid, ipaddr, cartpaid, ccard, expdate) VALUES ('"
-									+ id + "', DATE(), TIME(), '" + price + "', '" + items + "', '" + cartitems + "', '"
-									+ email + "', '" + ipaddr + "', 'Y', '" + ccard + "', '" + expdate + "')");
-
-					response.write(h2("You have just bought the following:") + "<p>");
-
-					/* Prepare and Execute SQL Query */
-					ResultSet rs = statement.executeQuery(
-							"SELECT itemnum, sdesc, ldesc, price FROM itemdb WHERE itemnum IN (" + cartitems + ")");
-					if (!rs.next()) {
-						throw new RuntimeException("Item number not found:");
-					} else {
-						/* Read the matching records and print them out */
-						response.write("<TABLE BORDER=1>");
-						response.write(tr(th("ItemNum") + th("Item") + th("Description") + th("Price") + th("Image")));
-						do {
-							String image = "/images/" + rs.getInt(1) + ".jpg";
-							response.write(tr(td(Integer.toString(rs.getInt(1))) + td(rs.getString(2))
-									+ td(rs.getString(3)) + td(String.format("$%.2f", rs.getFloat(4)))
-									+ td("align=\"CENTER\"", "<IMG SRC=" + image + ">")));
-						} while (rs.next());
-						response.write("</TABLE>\n\n" + "<p>");
-						response.write(h3("Purchased:   " + items + " items at " + price) + "<p>");
-						response.write("<Center><i>Thank you for shopping at BadStore.net!</i></Center>");
+					if (statement != null) {
+						statement.close();
 					}
-					response.write(footer());
-					response.write(end_html());
-				} catch (Exception e) {
-					context.fail(e);
-				} finally {
-					try {
-						if (statement != null) {
-							statement.close();
-						}
-					} catch (SQLException ignore) {
+				} catch (SQLException ignore) {
+				}
+				try {
+					if (connection != null) {
+						connection.close();
 					}
-					try {
-						if (connection != null) {
-							connection.close();
-						}
-					} catch (SQLException ignore) {
-					}
+				} catch (SQLException ignore) {
 				}
 			}
-			response.end();
-		});
+		}
+		response.end();
 	}
 
 	/******************
@@ -706,35 +1145,31 @@ public class BadStore extends CGI {
 	 ******************/
 	public void submitpayment(RoutingContext context) {
 		HttpServerRequest request = context.request();
-		request.setExpectMultipart(true);
-		request.endHandler(v -> {
+		/* Read SSOid Cookie */
+		Cookie stemp = context.getCookie("SSOid");
+		String email = null;
+		try {
+			String ssoid = new String(Base64.getDecoder().decode(stemp.getValue()));
+			String[] s_cookievalue = ssoid.split(":");
+			email = String.format(s_cookievalue[0]);
+		} catch (Exception ignore) {
+		}
 
-			/* Read SSOid Cookie */
-			Cookie stemp = context.getCookie("SSOid");
-			String email = null;
-			try {
-				String ssoid = new String(Base64.getDecoder().decode(stemp.getValue()));
-				String[] s_cookievalue = ssoid.split(":");
-				email = String.format(s_cookievalue[0]);
-			} catch (Exception ignore) {
-			}
+		String femail = "";
+		if (email == null || email.equals("")) {
+			femail = "Email Address: <INPUT TYPE=\"text\" NAME=\"email\"  SIZE=15 MAXLENGTH=40><p>";
+		} else {
+			femail = "Welcome, <b>" + email + "</b>" + hidden("email", email) + p();
+		}
 
-			String femail = "";
-			if (email == null || email.equals("")) {
-				femail = "Email Address: <INPUT TYPE=\"text\" NAME=\"email\"  SIZE=15 MAXLENGTH=40><p>";
-			} else {
-				femail = "Welcome, <b>" + email + "</b>" + hidden("email", email) + p();
-			}
-
-			String fname = request.getParam("fname");
-			if (fname != null && fname.equals("shipsearch")) {
-				checkship(context);
-			} else if (fname != null && fname.equals("shipcost")) {
-				doshipcost(context);
-			} else {
-				Show_Form(context, femail);
-			}
-		});
+		String fname = request.getParam("fname");
+		if (fname != null && fname.equals("shipsearch")) {
+			checkship(context);
+		} else if (fname != null && fname.equals("shipcost")) {
+			doshipcost(context);
+		} else {
+			Show_Form(context, femail);
+		}
 	}
 
 	private void checkship(RoutingContext context) {
@@ -928,13 +1363,13 @@ public class BadStore extends CGI {
 				} else {
 
 					response.write("<TABLE BORDER=1>");
-					response.write(tr(
-							th("Order Date") + th("Order Cost") + th("# Items") + th("Item List") + th("Card Used")));
+					response.write(
+							tr(th("Order Date"), th("Order Cost"), th("# Items"), th("Item List"), th("Card Used")));
 					do {
 						String ccard = rs.getString(5);
 						ccard = ccard.replaceAll("(\\d\\d\\d\\d)[\\ \\s]?", "$1 ").replaceAll(" $", "");
-						response.write(tr(td(rs.getString(1)) + td(rs.getString(2)) + td(rs.getString(3))
-								+ td(rs.getString(4)) + td(ccard)));
+						response.write(tr(td(rs.getString(1)), td(rs.getString(2)), td(rs.getString(3)),
+								td(rs.getString(4)), td(ccard)));
 					} while (rs.next());
 					response.write("</TABLE>\n\n");
 					response.write(p());
@@ -991,17 +1426,180 @@ public class BadStore extends CGI {
 	/******************
 	 * Supplier Login *
 	 ******************/
-	// TODO
+	public void supplierlogin(RoutingContext context) {
+		HttpServerResponse response = context.response();
+
+		printHttpHeaders(response);
+		response.write(header());
+		response.write(start_html("Supplier Portal Login - BadStore.net"));
+		response.write(h1("Welcome Supplier - Please Login:"));
+		response.write(hr());
+		response.write(p());
+		response.write(start_form("/cgi-bin/badstore.cgi?action=supplierportal"));
+		response.write(" Email Address:  ");
+		response.write(textfield("email", 15, 40));
+		response.write(p());
+		response.write(" Password:  ");
+		response.write(password_field("passwd", 8, 8));
+		response.write(p());
+		response.write(submit("Login"));
+		response.write(end_form());
+		response.write(footer());
+		response.write(end_html());
+		response.end();
+	}
 
 	/*******************
 	 * Supplier Portal *
 	 ******************/
-	// TODO
+	public void supplierportal(RoutingContext context) {
+		HttpServerRequest request = context.request();
+		HttpServerResponse response = context.response();
+		String email = request.getFormAttribute("email");
+		String passwd = request.getFormAttribute("passwd");
+		email = email.replaceAll("[\\r\\n]$", "");
+		passwd = passwd.replaceAll("[\\r\\n]$", "");
+		passwd = md5Hex(passwd);
+
+		Connection connection = null;
+		PreparedStatement statement = null;
+		try {
+			/* Connect to the local SQL Database */
+			connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
+
+			/* Prepare and Execute SQL Query to Verify Credentials */
+			statement = connection
+					.prepareStatement("SELECT * FROM userdb WHERE email='" + email + "' AND passwd='" + passwd + "'");
+			ResultSet rs = statement.executeQuery();
+
+			printHttpHeaders(response);
+			response.write(header());
+			response.write(start_html("Welcome to the BadStore.net Supplier Portal"));
+			response.write("Welcome Supplier");
+			response.write(hr());
+
+			if (!rs.next()) {
+				response.write(h2("UserID and Password not found!"));
+				response.write("Use your browser's Back button and try again.");
+			} else {
+				// Login credentials are valid
+				response.write(h2("Upload Price Lists to BadStore.net:"));
+				response.write(p());
+				response.write(p());
+				response.write(p());
+				response.write(h3("Select pricing file to upload from local system: "));
+				response.write(start_multipart_form("/cgi-bin/badstore.cgi?action=supupload"));
+				response.write(filefield("uploaded_file", 50));
+				response.write(br());
+				response.write(h3("Filename for uploaded pricing file on BadStore.net: "));
+				response.write(textfield("newfilename", 25, 50));
+				response.write("&nbsp");
+				response.write(submit("Upload"));
+				response.write(end_form());
+				response.write(hr());
+				response.write(p());
+				response.write(h2("View Pricing File on BadStore.net: "));
+				response.write(start_multipart_form("/cgi-bin/badstore.cgi?action=supupload"));
+				response.write(h3("Pricing file to View on BadStore.net: "));
+				response.write(textfield("viewfilename", 25, 50));
+				response.write("&nbsp");
+				response.write(submit("View"));
+				response.write(end_form());
+				response.write(
+						"<font face=Arial size=2><i>( For security purposes, a list of files on the server is not displayed. Please use your assigned naming convention to view your company's pricing file. )</i></font>");
+			}
+			response.write(hr());
+			response.write(h3("<B><center><i>Be Sure to check out our Web Services!</i></center></B>"));
+		} catch (SQLException e) {
+			response.putHeader("Location", "/cgi-bin/badstore.cgi?action=supplierlogin");
+			response.setStatusCode(SEE_OTHER.code());
+			response.end();
+			return;
+		} finally {
+			/* Close statement handles */
+			try {
+				if (statement != null) {
+					statement.close();
+				}
+			} catch (SQLException ignore) {
+			}
+			/* Disconnect from the databases */
+			try {
+				if (connection != null) {
+					connection.close();
+				}
+			} catch (SQLException ignore) {
+			}
+		}
+		response.write(footer());
+		response.write(end_html());
+		response.end();
+	}
 
 	/*******************
 	 * Supplier Upload *
 	 *******************/
-	// TODO
+	public void supupload(RoutingContext context) {
+		HttpServerRequest request = context.request();
+		HttpServerResponse response = context.response();
+
+		printHttpHeaders(response);
+		response.write(header());
+		response.write(start_html("BadStore.net - Supplier Upload/View"));
+
+		String referer = request.getHeader("Referer");
+		String hostname = request.getHeader("Host");
+
+		/* Check for valid referer from Supplier Portal */
+		if (referer != null && referer.matches("http://" + hostname + "/.*")) {
+			FileUpload aquery = null;
+			Set<FileUpload> fileUploadSet = context.fileUploads();
+			Iterator<FileUpload> fileUploadIterator = fileUploadSet.iterator();
+			while (fileUploadIterator.hasNext()) {
+				FileUpload fileUpload = fileUploadIterator.next();
+				if (fileUpload.name().equals("uploaded_file")) {
+					aquery = fileUpload;
+				}
+			}
+
+			if (aquery == null) {
+				response.write(h1("View a pricing file"));
+				String viewfilename = request.getFormAttribute("viewfilename");
+				File viewfile = new File(uploadDir, viewfilename);
+				try {
+					byte[] content = Files.readAllBytes(viewfile.toPath());
+					response.write(Buffer.buffer(content));
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+				response.write(p());
+				response.write(h2("Thanks for viewing your pricing file!"));
+				response.write(p());
+			} else {
+				response.write(h1("Upload a pricing file"));
+
+				try {
+					String newfilename = request.getFormAttribute("newfilename");
+					Buffer upload_filehandle = vertx.fileSystem().readFileBlocking(aquery.uploadedFileName());
+					File out = new File(uploadDir, newfilename);
+					Files.write(out.toPath(), upload_filehandle.getBytes());
+					response.write(p());
+					response.write(h2("Thanks for uploading your new pricing file!"));
+					response.write(p());
+					response.write(h3("Your file has been uploaded: " + newfilename));
+					response.write(p());
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		} else {
+			/* Invalid referer */
+			response.write(h1("An Error Has Occurred"));
+			response.write(h3("Uploads are only accepted by authenticating to the Supplier Portal!"));
+		}
+		response.write(end_html());
+		response.end();
+	}
 
 	/**********************
 	 * View Cart Contents *
@@ -1059,14 +1657,14 @@ public class BadStore extends CGI {
 					/* Read the matching records and print them out */
 					response.write(start_form("/cgi-bin/badstore.cgi?action=submitpayment"));
 					response.write("<TABLE BORDER=1>");
-					response.write(tr(
-							th("ItemNum") + th("Item") + th("Description") + th("Price") + th("Image") + th("Order")));
+					response.write(
+							tr(th("ItemNum"), th("Item"), th("Description"), th("Price"), th("Image"), th("Order")));
 
 					do {
 						String image = "/images/" + rs.getInt(1) + ".jpg";
-						response.write(tr(td(Integer.toString(rs.getInt(1))) + td(rs.getString(2)) + td(rs.getString(3))
-								+ td(String.format("$%.2f", rs.getFloat(4)))
-								+ td("align=\"CENTER\"", "<IMG SRC=" + image + ">") + td("align=\"CENTER\"",
+						response.write(tr(td(Integer.toString(rs.getInt(1))), td(rs.getString(2)), td(rs.getString(3)),
+								td(String.format("$%.2f", rs.getFloat(4))),
+								td("align=\"CENTER\"", "<IMG SRC=" + image + ">"), td("align=\"CENTER\"",
 										"<INPUT type=checkbox checked name='cartitem' value=" + rs.getInt(1) + ">")));
 					} while (rs.next());
 					response.write("</TABLE>\n\n");
@@ -1259,111 +1857,107 @@ public class BadStore extends CGI {
 	public void moduser(RoutingContext context) {
 		HttpServerRequest request = context.request();
 		HttpServerResponse response = context.response();
-		request.setExpectMultipart(true);
-		request.endHandler(v -> {
-			String aquery = request.getFormAttribute("DoMods");
-			String email = request.getFormAttribute("email");
-			String passwd = request.getFormAttribute("passwd");
-			String pwdhint = request.getFormAttribute("pwdhint");
-			String fullname = request.getFormAttribute("fullname");
-			String role = request.getFormAttribute("role");
-			String vnewpasswd = request.getFormAttribute("vnewpasswd");
-			String newemail = request.getFormAttribute("newemail");
+		String aquery = request.getFormAttribute("DoMods");
+		String email = request.getFormAttribute("email");
+		String passwd = request.getFormAttribute("passwd");
+		String pwdhint = request.getFormAttribute("pwdhint");
+		String fullname = request.getFormAttribute("fullname");
+		String role = request.getFormAttribute("role");
+		String vnewpasswd = request.getFormAttribute("vnewpasswd");
+		String newemail = request.getFormAttribute("newemail");
 
-			if (email != null) {
-				email = email.trim();
-			}
-			if (passwd != null) {
-				passwd = passwd.trim();
-			}
-			if (pwdhint != null) {
-				pwdhint = pwdhint.trim();
-			}
-			if (fullname != null) {
-				fullname = fullname.trim();
-			}
-			if (role != null) {
-				role = role.trim();
-			}
-			String newpasswd = "Welcome";
-			String encpasswd = md5Hex(newpasswd);
-			String vencpasswd = vnewpasswd == null ? null : md5Hex(vnewpasswd);
-			printHttpHeaders(response);
+		if (email != null) {
+			email = email.trim();
+		}
+		if (passwd != null) {
+			passwd = passwd.trim();
+		}
+		if (pwdhint != null) {
+			pwdhint = pwdhint.trim();
+		}
+		if (fullname != null) {
+			fullname = fullname.trim();
+		}
+		if (role != null) {
+			role = role.trim();
+		}
+		String newpasswd = "Welcome";
+		String encpasswd = md5Hex(newpasswd);
+		String vencpasswd = vnewpasswd == null ? null : md5Hex(vnewpasswd);
+		printHttpHeaders(response);
 
-			/* Connect to the SQL Database */
-			Connection connection = null;
-			Statement statement = null;
+		/* Connect to the SQL Database */
+		Connection connection = null;
+		Statement statement = null;
+		try {
+			connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
+			statement = connection.createStatement();
+
+			/* Reset User Password */
+			if (aquery != null && aquery.equals("Reset User Password")) {
+				response.write(header());
+				response.write(start_html("BadStore.net - Reset Password for User"));
+				/* Prepare and Execute SQL Query */
+				statement.executeUpdate("UPDATE userdb SET passwd = '" + encpasswd + "' WHERE email='" + email + "'");
+				response.write(h2("The password for user:  " + email + p() + " ...has been reset to: " + newpasswd));
+			} else if (aquery != null && aquery.equals("Add User")) {
+				response.write(header());
+				response.write(start_html("BadStore.net - Add User"));
+				statement.executeUpdate("INSERT INTO userdb (email, passwd, pwdhint, fullname, role) VALUES ('" + email
+						+ "','" + encpasswd + "','+" + pwdhint + "', '" + fullname + "', '" + role + "')");
+				response.write(h2("User:  " + fullname + " has been added."));
+			} else if (aquery != null && aquery.equals("Delete User")) {
+				response.write(header());
+				response.write(start_html("BadStore.net - Delete User"));
+				statement.executeUpdate("DELETE FROM userdb WHERE email='" + email + "'");
+				response.write(h2("User:  " + email + " has been deleted."));
+			} else if (aquery != null && aquery.equals("Change Account")) {
+				/* Change Account Information */
+				response.write(header());
+				response.write(start_html("BadStore.net - Update User Information"));
+				statement.executeUpdate("UPDATE userdb SET fullname='" + fullname + "' WHERE email='" + email + "'");
+				statement.executeUpdate("UPDATE userdb SET passwd='" + vencpasswd + "' WHERE email='" + email + "'");
+				statement.executeUpdate("UPDATE userdb SET email='" + newemail + "' WHERE email='" + email + "'");
+				response.write(h2(" Account Information for: "));
+				response.write(" Full Name: ");
+				response.write(fullname);
+				response.write(p());
+				response.write("Email: ");
+				response.write(newemail);
+				response.write(p());
+				response.write(" Password: ");
+				response.write(newpasswd);
+				response.write(p());
+				response.write(h3(" Has been updated!"));
+			}
+			response.write(footer());
+			response.write(end_html());
+			response.end();
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		} finally {
 			try {
-				connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
-				statement = connection.createStatement();
-
-				/* Reset User Password */
-				if (aquery != null && aquery.equals("Reset User Password")) {
-					response.write(header());
-					response.write(start_html("BadStore.net - Reset Password for User"));
-					/* Prepare and Execute SQL Query */
-					statement.executeUpdate(
-							"UPDATE userdb SET passwd = '" + encpasswd + "' WHERE email='" + email + "'");
-					response.write(
-							h2("The password for user:  " + email + p() + " ...has been reset to: " + newpasswd));
-				} else if (aquery != null && aquery.equals("Add User")) {
-					response.write(header());
-					response.write(start_html("BadStore.net - Add User"));
-					statement.executeUpdate("INSERT INTO userdb (email, passwd, pwdhint, fullname, role) VALUES ('"
-							+ email + "','" + encpasswd + "','+" + pwdhint + "', '" + fullname + "', '" + role + "')");
-					response.write(h2("User:  " + fullname + " has been added."));
-				} else if (aquery != null && aquery.equals("Delete User")) {
-					response.write(header());
-					response.write(start_html("BadStore.net - Delete User"));
-					statement.executeUpdate("DELETE FROM userdb WHERE email='" + email + "'");
-					response.write(h2("User:  " + email + " has been deleted."));
-				} else if (aquery != null && aquery.equals("Change Account")) {
-					/* Change Account Information */
-					response.write(header());
-					response.write(start_html("BadStore.net - Update User Information"));
-					statement
-							.executeUpdate("UPDATE userdb SET fullname='" + fullname + "' WHERE email='" + email + "'");
-					statement
-							.executeUpdate("UPDATE userdb SET passwd='" + vencpasswd + "' WHERE email='" + email + "'");
-					statement.executeUpdate("UPDATE userdb SET email='" + newemail + "' WHERE email='" + email + "'");
-					response.write(h2(" Account Information for: "));
-					response.write(" Full Name: ");
-					response.write(fullname);
-					response.write(p());
-					response.write("Email: ");
-					response.write(newemail);
-					response.write(p());
-					response.write(" Password: ");
-					response.write(newpasswd);
-					response.write(p());
-					response.write(h3(" Has been updated!"));
+				if (statement != null) {
+					statement.close();
 				}
-				response.write(footer());
-				response.write(end_html());
-				response.end();
-			} catch (Exception e) {
-				context.fail(e);
-			} finally {
-				try {
-					if (statement != null) {
-						statement.close();
-					}
-				} catch (SQLException ignore) {
-				}
-				try {
-					if (connection != null) {
-						connection.close();
-					}
-				} catch (SQLException ignore) {
-				}
+			} catch (SQLException ignore) {
 			}
-		});
+			try {
+				if (connection != null) {
+					connection.close();
+				}
+			} catch (SQLException ignore) {
+			}
+		}
 	}
 
 	/****************
 	 * SOAP Updates *
 	 ****************/
-	// TODO
+	public void soapupdates(RoutingContext context) {
+		// Not implement
+		context.fail(NOT_IMPLEMENTED.code());
+	}
 
 	/*************
 	 * Auth User *
@@ -1371,100 +1965,97 @@ public class BadStore extends CGI {
 	public void authuser(RoutingContext context) {
 		HttpServerRequest request = context.request();
 		HttpServerResponse response = context.response();
-		request.setExpectMultipart(true);
-		request.endHandler(v -> {
-			String email = request.getFormAttribute("email");
-			String passwd = request.getFormAttribute("passwd");
-			String pwdhint = request.getFormAttribute("pwdhint");
-			String fullname = request.getFormAttribute("fullname");
-			if (fullname != null) {
-				fullname = fullname.replaceAll("'", "&apos;");
-			}
-			String role = request.getFormAttribute("role");
+		String email = request.getFormAttribute("email");
+		String passwd = request.getFormAttribute("passwd");
+		String pwdhint = request.getFormAttribute("pwdhint");
+		String fullname = request.getFormAttribute("fullname");
+		if (fullname != null) {
+			fullname = fullname.replaceAll("'", "&apos;");
+		}
+		String role = request.getFormAttribute("role");
 
-			if (email != null) {
-				email = email.trim();
-			}
-			if (passwd != null) {
-				passwd = passwd.trim();
-			}
-			if (pwdhint != null) {
-				pwdhint = pwdhint.trim();
-			}
-			if (fullname != null) {
-				fullname = fullname.trim();
-			}
-			if (role != null) {
-				role = role.trim();
-			}
+		if (email != null) {
+			email = email.trim();
+		}
+		if (passwd != null) {
+			passwd = passwd.trim();
+		}
+		if (pwdhint != null) {
+			pwdhint = pwdhint.trim();
+		}
+		if (fullname != null) {
+			fullname = fullname.trim();
+		}
+		if (role != null) {
+			role = role.trim();
+		}
 
-			passwd = md5Hex(passwd);
+		passwd = md5Hex(passwd);
 
-			/* Connect to the SQL Database */
-			Connection connection = null;
-			Statement statement = null;
-			try {
-				connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
-				statement = connection.createStatement();
+		/* Connect to the SQL Database */
+		Connection connection = null;
+		Statement statement = null;
+		try {
+			connection = DriverManager.getConnection("jdbc:sqlite:" + dbfile.getAbsolutePath());
+			statement = connection.createStatement();
 
-				String action = request.getParam("action");
-				if (action.equals("login")) {
-					ResultSet rs = null;
-					try {
-						rs = statement.executeQuery(
-								"SELECT * FROM userdb WHERE email='" + email + "' AND passwd='" + passwd + "'");
-					} catch (SQLException e) {
-						response.putHeader("Location", "/cgi-bin/badstore.cgi?action=loginregister");
-					}
+			String action = request.getParam("action");
+			if (action.equals("login")) {
+				ResultSet rs = null;
+				try {
+					rs = statement.executeQuery(
+							"SELECT * FROM userdb WHERE email='" + email + "' AND passwd='" + passwd + "'");
+				} catch (SQLException e) {
+					response.putHeader("Location", "/cgi-bin/badstore.cgi?action=loginregister");
+				}
 
-					if (rs == null || !rs.next()) {
-						printHttpHeaders(response);
-						response.write(header());
-						response.write(start_html("BadStore.net - Login Error"));
-						response.write(h2("UserID and Password not found!"));
-						response.write("Use your browser's Back button and try again.");
-						response.write(footer());
-						response.write(end_html());
-						response.end();
-						return;
-					} else {
-						/* Login credentials are valid */
-						fullname = rs.getString(4);
-						role = rs.getString(5);
-						/* Close statement handles */
-					}
+				if (rs == null || !rs.next()) {
+					printHttpHeaders(response);
+					response.write(header());
+					response.write(start_html("BadStore.net - Login Error"));
+					response.write(h2("UserID and Password not found!"));
+					response.write("Use your browser's Back button and try again.");
+					response.write(footer());
+					response.write(end_html());
+					response.end();
+					return;
 				} else {
-					/* Register for a new account as a normal user */
-					/* Add ordered items to Order Database */
-					statement.executeUpdate("INSERT INTO userdb (email, passwd, pwdhint, fullname, role) VALUES ('"
-							+ email + "', '" + passwd + "','" + pwdhint + "', '" + fullname + "', '" + role + "')");
+					/* Login credentials are valid */
+					fullname = rs.getString(4);
+					role = rs.getString(5);
+					/* Close statement handles */
 				}
-
-				/* Set SSO Cookie */
-				String cookievalue = String.join(":", new String[] { email, passwd, fullname, role });
-				cookievalue = Base64.getEncoder().encodeToString(cookievalue.getBytes());
-				Cookie cartcookie = Cookie.cookie("SSOid", cookievalue);
-				cartcookie.setPath("/");
-				context.addCookie(cartcookie);
-
-				home(context);
-			} catch (Exception e) {
-				context.fail(e);
-			} finally {
-				try {
-					if (statement != null) {
-						statement.close();
-					}
-				} catch (SQLException ignore) {
-				}
-				try {
-					if (connection != null) {
-						connection.close();
-					}
-				} catch (SQLException ignore) {
-				}
+			} else {
+				/* Register for a new account as a normal user */
+				/* Add ordered items to Order Database */
+				statement.executeUpdate("INSERT INTO userdb (email, passwd, pwdhint, fullname, role) VALUES ('" + email
+						+ "', '" + passwd + "','" + pwdhint + "', '" + fullname + "', '" + role + "')");
 			}
-		});
+
+			/* Set SSO Cookie */
+			String cookievalue = String.join(":", new String[] { email, passwd, fullname, role });
+			cookievalue = Base64.getEncoder().encodeToString(cookievalue.getBytes());
+			Cookie cartcookie = Cookie.cookie("SSOid", cookievalue);
+			cartcookie.setPath("/");
+			context.addCookie(cartcookie);
+
+			home(context);
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		} finally {
+			try {
+				if (statement != null) {
+					statement.close();
+				}
+			} catch (SQLException ignore) {
+			}
+			try {
+				if (connection != null) {
+					connection.close();
+				}
+			} catch (SQLException ignore) {
+			}
+		}
 	}
 
 	/*****************************
@@ -1538,13 +2129,13 @@ public class BadStore extends CGI {
 				response.write("<HR>");
 				response.write(start_form("/cgi-bin/badstore.cgi?action=cartadd"));
 				response.write("<TABLE BORDER=1>");
-				response.write(tr(th("ItemNum") + th("Item") + th("Description") + th("Price") + th("Image")
-						+ th("Add to Cart")));
+				response.write(
+						tr(th("ItemNum"), th("Item"), th("Description"), th("Price"), th("Image"), th("Add to Cart")));
 				do {
 					String image = "/images/" + rs.getInt(1) + ".jpg";
-					response.write(tr(td(Integer.toString(rs.getInt(1))) + td(rs.getString(2)) + td(rs.getString(3))
-							+ td(String.format("$%.2f", rs.getFloat(4)))
-							+ td("align=\"CENTER\"", "<IMG SRC=" + image + ">") + td("align=\"CENTER\"",
+					response.write(tr(td(Integer.toString(rs.getInt(1))), td(rs.getString(2)), td(rs.getString(3)),
+							td(String.format("$%.2f", rs.getFloat(4))),
+							td("align=\"CENTER\"", "<IMG SRC=" + image + ">"), td("align=\"CENTER\"",
 									"<INPUT type=checkbox name=\"cartitem\" value=" + rs.getInt(1) + ">")));
 				} while (rs.next());
 				response.write("</TABLE>\n\n");

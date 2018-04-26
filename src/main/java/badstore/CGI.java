@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URLEncoder;
 import java.util.Map;
 
 public class CGI {
@@ -134,17 +135,17 @@ public class CGI {
 
 	static String start_html(String title) {
 		StringBuilder builder = new StringBuilder();
-		builder.append("<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML//EN\"><HTML><HEAD><TITLE>");
+		builder.append("<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML//EN\">\n<HTML><HEAD><TITLE>");
 		builder.append(title);
-		builder.append("</TITLE></HEAD><BODY>");
+		builder.append("</TITLE>\n</HEAD><BODY>");
 		return builder.toString();
 	}
 
 	static String start_html(String title, String script) {
 		StringBuilder builder = new StringBuilder();
-		builder.append("<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML//EN\"><HTML><HEAD><TITLE>");
+		builder.append("<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML//EN\">\n<HTML><HEAD><TITLE>");
 		builder.append(title);
-		builder.append("</TITLE>");
+		builder.append("</TITLE>\n");
 		builder.append("<SCRIPT LANGUAGE=\"JavaScript\" SRC=\"");
 		builder.append(script);
 		builder.append("\"></SCRIPT>");
@@ -161,28 +162,34 @@ public class CGI {
 	}
 
 	static String h1(String str) {
-		return "<h1>" + str + "</h1>";
+		return "<H1>" + str + "</H1>";
 	}
 
 	static String h2(String str) {
-		return "<h2>" + str + "</h2>";
+		return "<H2>" + str + "</H2>";
 	}
 
 	static String h3(String str) {
-		return "<h3>" + str + "</h3>";
+		return "<H3>" + str + "</H3>";
 	}
 
 	static String start_form(String action) {
-		return "<FORM METHOD=\"POST\" ACTION=\"" + action + "\" ENCTYPE=\"application/x-www-form-urlencoded\">";
+		return "<FORM METHOD=\"POST\" ACTION=\"" + action + "\" ENCTYPE=\"application/x-www-form-urlencoded\">\n";
 	}
 
 	static String start_form(String action, String onSubmit) {
 		return "<FORM METHOD=\"POST\" ACTION=\"" + action
-				+ "\" ENCTYPE=\"application/x-www-form-urlencoded\" ONSUBMIT=\"" + onSubmit + "\">";
+				+ "\" ENCTYPE=\"application/x-www-form-urlencoded\" ONSUBMIT=\"" + onSubmit + "\">\n";
 	}
 
-	static String tr(String str) {
-		return "<tr>" + str + "</tr>";
+	static String tr(String... args) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("<tr>");
+		for (String str : args) {
+			builder.append(str);
+		}
+		builder.append("</tr>");
+		return builder.toString();
 	}
 
 	static String th(String str) {
@@ -226,7 +233,61 @@ public class CGI {
 	}
 
 	static String p() {
-		return "<p>";
+		return "<P>";
 	}
 
+	static String font(String face, int size, String value) {
+		return "<FONT FACE=\"" + face + "\" SIZE=\"" + Integer.toString(size) + "\">" + value + "</FONT>";
+	}
+
+	static String popup_menu(String name, String[] labels) {
+		StringBuilder builder = new StringBuilder();
+		builder.append("<SELECT NAME=\"" + name + "\">\n");
+		for (String label : labels) {
+			builder.append("<OPTION  VALUE=\"" + label + "\">" + label + "\n");
+		}
+		builder.append("</SELECT>\n");
+		return builder.toString();
+	}
+
+	static String textfield(String name, int size) {
+		return "<INPUT TYPE=\"text\" NAME=\"" + name + "\"  SIZE=" + Integer.toString(size) + ">";
+	}
+
+	static String textfield(String name, int size, int maxlength) {
+		return "<INPUT TYPE=\"text\" NAME=\"" + name + "\"  SIZE=" + Integer.toString(size) + " MAXLENGTH="
+				+ Integer.toString(maxlength) + ">";
+	}
+
+	static String b(String str) {
+		return "<B>" + str + "</B>";
+	}
+
+	static String password_field(String name, int size, int maxlength) {
+		return "<INPUT TYPE=\"password\" NAME=\"" + name + "\"  SIZE=" + Integer.toString(size) + " MAXLENGTH="
+				+ Integer.toString(maxlength) + ">";
+	}
+
+	static String start_multipart_form(String action) {
+		return "<FORM METHOD=\"POST\" ACTION=\"" + action + "\" ENCTYPE=\"multipart/form-data\">\n";
+	}
+
+	static String filefield(String name, int size) {
+		return "<INPUT TYPE=\"file\" NAME=\"" + name + "\"  SIZE=" + Integer.toString(size) + ">";
+	}
+
+	static String simple_escape(String str) {
+		if (str == null) {
+			return null;
+		}
+		return str.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
+	}
+	
+	static String url_encode(String str) {
+		try {
+			return URLEncoder.encode(str, "UTF-8").replaceAll("\\+", "%20").replaceAll("\\*", "%2A");
+		}catch(Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
 }

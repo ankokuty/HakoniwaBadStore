@@ -5,7 +5,7 @@ Burp Suite Japan User Groupの初心者向け[ハンズオンイベント](https
 オリジナルのBadStoreはisoイメージとして配布されており、実行するには仮想マシンなどからCDブートする必要があります。イベントにおいて、仮想マシンとの通信がうまくできない人が少なからずいたため、より通信トラブルが少なくなることを目的として作成しました。
 
 # ダウンロード
-[HakoniwaBadStore.jar](https://github.com/ankokuty/HakoniwaBadStore/blob/master/dist/HakoniwaBadStore.jar?raw=true)
+`HakoniwaBadstore.jar`を[ここ](https://github.com/ankokuty/HakoniwaBadStore/releases)からダウンロードしてください。
 
 # 注意
 箱庭BadStoreは、デモやセキュリティトレーニング目的のみで利用されることを想定している、脆弱性を意図的に作り込んだセキュアではないプログラムです。
@@ -38,7 +38,12 @@ Burp Suite Japan User Groupの初心者向け[ハンズオンイベント](https
 オリジナルにはperlのopen関数利用によるコマンドインジェクションがありましたが、Perl固有の問題であるため箱庭BadStoreでは実装していません。
 
 - [その他]
-サプライヤー機能については、まだ実装できていません。
+次の機能は実装していません。
+    - SOAP Updates
+    - Secret Administration Menu
+        - Troubleshooting
+        - Supply Chain:  Manage Open Orders
+        - Supply Chain:  Check Credit with Supplier
 
 # ライセンス
 GNU GPL v2.0 またはそれ以降

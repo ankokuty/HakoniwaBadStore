@@ -26,7 +26,7 @@ public class BSHeader extends CGI implements Handler<RoutingContext> {
 
 		String action = context.request().getParam("action");
 		if (action != null && action.equals("cartadd")) {
-			cartAdd(context);
+			cartadd(context);
 		} else {
 			/* Read CartID Cookie */
 			Cookie ctemp = context.getCookie("CartID");
@@ -45,7 +45,7 @@ public class BSHeader extends CGI implements Handler<RoutingContext> {
 		output(context);
 	}
 
-	private void cartAdd(RoutingContext context) {
+	private void cartadd(RoutingContext context) {
 		HttpServerRequest request = context.request();
 		HttpServerResponse response = context.response();
 		String sessid = Long.toString((new Date().getTime() / 1000));
@@ -86,7 +86,7 @@ public class BSHeader extends CGI implements Handler<RoutingContext> {
 					// Create initial CartID cookie
 					String cookievalue = String.join(":",
 							new String[] { sessid, Integer.toString(_items), Float.toString(cost), cartitem });
-					Cookie cartcookie = Cookie.cookie("CartID", cookievalue);
+					Cookie cartcookie = Cookie.cookie("CartID", url_encode(cookievalue));
 					cartcookie.setPath("/");
 					items = Integer.toString(_items);
 					price = String.format("$%.2f", cost);

@@ -45,7 +45,8 @@
 		<div class="paragraph Body_Small" style="line-height: 16px; margin-bottom: 0px; margin-top: 0px; padding-top: 10px; text-align: right; "><a href="/cgi-bin/badstore.cgi?action=loginregister" title="Login to your account or Register for a new account" style="line-height: 16px; opacity: 1.00; ">Login / Register</a></div>
 <P><HR>
                 <div class="paragraph Heading_3" style="line-height: 18px; padding-bottom: 0pt; padding-top: 0pt; ">Suppliers Only</div>
-		<div class="paragraph Body_Small" style="line-height: 16px; margin-bottom: 0px; margin-top: 0px; padding-top: 10px; text-align: right; ">Supplier Login</div>
+		<div class="paragraph Body_Small" style="line-height: 16px; margin-bottom: 0px; margin-top: 0px; padding-top: 10px; text-align: right; "><a href="/cgi-bin/badstore.cgi?action=supplierlogin" title="For Suppliers Only!" style="line-height: 16px; opacity: 1.00; ">Supplier Login</div>
+
                 <div class="paragraph Photo_Album_Titles" style="line-height: 14px; "><img src="/images/xml.gif" alt="" id="id77" style="border: none; clear: left; float: left; left: 6px; position: relative; top: 5px; " /></div>
                 <div class="paragraph Body_Small" style="line-height: 16px; margin-bottom: 0px; margin-top: 0px; text-align: right; line-height: 16px; opacity: 1.00;">Web Services</div>
 <br><HR>
