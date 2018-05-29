@@ -29,17 +29,18 @@ public class LogTable extends JTable implements Handler<RoutingContext> {
 
 	@Override
 	public void handle(RoutingContext context) {
-		context.next();
-		
 		HttpServerRequest request = context.request();
 		HttpServerResponse response = context.response();
 		
-		model.addRow(new String[]{
-			new Date().toString(),
-			request.method().toString(),
-			request.path(),
-			Integer.toString(response.getStatusCode()),
-			Long.toString(response.bytesWritten()),
+		response.endHandler(v -> {
+			model.addRow(new String[]{
+				new Date().toString(),
+				request.method().toString(),
+				request.path(),
+				Integer.toString(response.getStatusCode()),
+				Long.toString(response.bytesWritten()),
+			});
 		});
+		context.next();
 	}
 }

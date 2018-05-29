@@ -464,7 +464,7 @@ public class BadStore extends CGI {
 			} catch (SQLException ignore) {
 			}
 		}
-		context.response().end();
+		response.end();
 	}
 
 	/*********
@@ -2165,7 +2165,7 @@ public class BadStore extends CGI {
 			} catch (SQLException ignore) {
 			}
 		}
-		context.response().end();
+		response.end();
 	}
 
 	private String md5Hex(String input) {

@@ -38,7 +38,7 @@ public class InitDBs extends CGI implements Handler<RoutingContext> {
 		initialize();
 		HttpServerResponse response = context.response();
 		response.putHeader("Content-Type", "text/html");
-		context.response().setChunked(true)
+		response.setChunked(true)
 				.write("<HTML><HEAD><B>BadStore.net - Database Reset</B></HEAD><BODY><p><hr><p><H1>Databases have been reset...</H1><p><BR><A HREF='/'>Click Here to go directly to BadStore.net</A></BODY></HTML>\n")
 				.end();
 	}
