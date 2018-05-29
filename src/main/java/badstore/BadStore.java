@@ -32,13 +32,13 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
-import javax.xml.bind.DatatypeConverter;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
+import org.apache.commons.codec.binary.Hex;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -2172,7 +2172,7 @@ public class BadStore extends CGI {
 		try {
 			MessageDigest md5 = MessageDigest.getInstance("MD5");
 			byte[] digest = md5.digest(input.getBytes());
-			return DatatypeConverter.printHexBinary(digest);
+			return new String(Hex.encodeHex(digest));
 		} catch (Exception ignore) {
 			return null;
 		}
