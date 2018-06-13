@@ -1,8 +1,8 @@
 # Java
-#*.class
-#*.jar
-#*.war
-#*.ear
+*.class
+*.jar
+*.war
+*.ear
 
 # Eclipse
 .project
@@ -10,10 +10,10 @@
 .settings/
 
 # Idea
-#.idea
-#*.iml
-#*.iws
-#*.ipr
+.idea
+*.iml
+*.iws
+*.ipr
 
 # OS
 Thumbs.db
