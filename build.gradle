@@ -21,3 +21,10 @@ sourceSets {
         }
     }
 }
+
+jar {
+    manifest {
+        attributes('Main-Class': 'burp.BurpExtender')
+    }
+    from configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+}
