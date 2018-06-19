@@ -533,7 +533,7 @@ public class BadStore extends CGI {
 
 				/* Prepare the Sales Report */
 				if (aquery.equals("View Sales Reports")) {
-					String sql = "SELECTs * FROM orderdb ORDER BY 'orderdate','ordertime'";
+					String sql = "SELECT * FROM orderdb ORDER BY 'orderdate','ordertime'";
 					ResultSet rs = statement.executeQuery(sql);
 
 					response.write(h2("<Center>BadStore.net Sales Report"));
