@@ -2069,7 +2069,7 @@ public class BadStore extends CGI {
 
 		try {
 			Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
-					.parse(new FileInputStream("htdocs/rss.xml"));
+					.parse(new FileInputStream(rssfile));
 			document.getElementsByTagName("pubDate").item(0).setTextContent(getdate());
 			document.getElementsByTagName("lastBuildDate").item(0).setTextContent(getdate());
 			Node channel = document.getElementsByTagName("channel").item(0);
@@ -2098,7 +2098,7 @@ public class BadStore extends CGI {
 			TransformerFactory transFactory = TransformerFactory.newInstance();
 			Transformer transformer = transFactory.newTransformer();
 
-			FileOutputStream fos = new FileOutputStream(new File("htdocs/rss.xml"));
+			FileOutputStream fos = new FileOutputStream(rssfile);
 			StreamResult result = new StreamResult(fos);
 			transformer.transform(new DOMSource(document), result);
 			fos.close();
