@@ -136,7 +136,7 @@ public class InitDBs extends CGI implements Handler<RoutingContext> {
 
 			// ### Create userdb table
 			statement.executeUpdate(
-					"CREATE TABLE userdb (email VARCHAR(40), passwd VARCHAR(32), pwdhint VARCHAR(8), fullname VARCHAR(50), role VARCHAR(1));");
+					"CREATE TABLE userdb (email VARCHAR(40), passwd VARCHAR(32) COLLATE nocase, pwdhint VARCHAR(8), fullname VARCHAR(50), role VARCHAR(1));");
 			// ### Add users to userdb
 			sql = new StringBuilder();
 			sql.append(
