@@ -999,7 +999,6 @@ public class BadStore extends CGI {
 			response.write(h3("(If you're trying to hack - I know who you are:   " + ipaddr + ")"));
 			response.write(footer());
 			response.write(end_html());
-			response.end();
 		} else {
 			Connection connection = null;
 			Statement statement = null;
