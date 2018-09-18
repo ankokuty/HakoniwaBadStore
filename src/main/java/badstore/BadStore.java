@@ -934,7 +934,9 @@ public class BadStore extends CGI {
 			in = new BufferedReader(new FileReader(dataFile));
 			String line;
 			while ((line = in.readLine()) != null) {
-				String[] data = line.split("~", 4);
+				String[] data = new String[4];
+				String[] tmp = line.split("~", 4);
+				System.arraycopy(tmp, 0, data, 0, tmp.length);
 				builder.append(data[0]);
 				builder.append(": <B>");
 				builder.append(data[1]);
