@@ -359,6 +359,7 @@ public class BadStore extends CGI {
 		HttpServerResponse response = context.response();
 
 		String squery = request.getParam("searchquery");
+		squery = squery.replaceAll("\\00", "");
 
 		try {
 			Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
