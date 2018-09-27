@@ -1,2 +1,2 @@
 <HR><Center><FONT SIZE=2, FACE='Times'>BadStore v2.1.2 - Copyright &#169; 2003-2006</Center>
-<Center><FONT SIZE=2, FACE='Times'>HakoniwaBadStore v1.0.3 - Copyright &#169; 2016-2017</Center>
+<Center><FONT SIZE=2, FACE='Times'>HakoniwaBadStore v1.0.5 - Copyright &#169; 2016-2018</Center>
