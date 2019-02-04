@@ -93,7 +93,7 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 							message.setText("Initializing data ... ");
 							badstore = new BadStore(port, host, table);
 							badstore.startServer(BadstorePanel.this);
-							message.setText("");
+							message.setText(makeURL());
 						} catch (Exception e) {
 							callbacks.printError(e.getMessage());
 							throw new RuntimeException(e);
@@ -137,6 +137,16 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 			badstore.stopServer();
 			enableComponents();
 			message.setText(event.cause().getMessage());
+		}
+	}
+
+	private String makeURL() {
+		int port = Integer.parseInt(textPort.getText());
+		String host = (String) comboHost.getSelectedItem();
+		if (port == 80) {
+			return "http://" + host + "/";
+		} else {
+			return "http://" + host + ":" + Integer.toString(port) + "/";
 		}
 	}
 
