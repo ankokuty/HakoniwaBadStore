@@ -2,7 +2,8 @@ package burp;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.event.ItemEvent;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -12,14 +13,17 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 
 import badstore.BadStore;
+import badstore.InitDBs;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.http.HttpServer;
@@ -35,6 +39,8 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 
 	static String DEFAULT_HOST = "127.0.0.1";
 	static int DEFAULT_PORT = 8528;
+	static String confirmMessage = "Are you sure you want to reset the database?";
+
 
 	/**
 	 * Create the panel.
@@ -115,16 +121,40 @@ public class BadstorePanel extends JPanel implements IExtensionStateListener, Ha
 			}
 		});
 
+		JButton buttonReset = new JButton("Reset");
+		buttonReset.addActionListener(ev -> {
+			Object[] options = {"Yes","No"};
+			int ret = JOptionPane.showOptionDialog(this, confirmMessage, "Confirm", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, null, options, options[1]);
+			if(ret == JOptionPane.YES_OPTION){
+				new InitDBs().initialize();
+			}
+		});
+
 		JPanel panel = new JPanel();
 		JScrollPane sp = new JScrollPane(table);
+		JLabel glue = new JLabel("");
 
-		panel.setLayout(new FlowLayout(FlowLayout.LEFT));
+		GridBagLayout layout = new GridBagLayout();
+		panel.setLayout(layout);
 		panel.add(labelPort);
 		panel.add(textPort);
 		panel.add(labelHost);
 		panel.add(comboHost);
 		panel.add(button);
 		panel.add(message);
+		panel.add(glue);
+		panel.add(buttonReset);
+
+		GridBagConstraints constraints = new GridBagConstraints();
+		layout.setConstraints(labelPort, constraints);
+		layout.setConstraints(textPort, constraints);
+		layout.setConstraints(labelPort, constraints);
+		layout.setConstraints(comboHost, constraints);
+		layout.setConstraints(button, constraints);
+		layout.setConstraints(message, constraints);
+		layout.setConstraints(buttonReset, constraints);
+		constraints.weightx = 100.0;
+		layout.setConstraints(glue, constraints);
 
 		setLayout(new BorderLayout());
 		add(panel, BorderLayout.PAGE_START);
