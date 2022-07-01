@@ -1,30 +1,32 @@
-apply plugin: 'java'
+plugins {
+    id 'java'
+}
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    compile group: 'net.portswigger.burp.extender', name: 'burp-extender-api', version: '1.7.22'
-    compile group: 'io.vertx', name: 'vertx-web', version: '3.4.1'
-    compile group: 'org.xerial', name: 'sqlite-jdbc', version: '3.18.0'
-    compile group: 'commons-codec', name: 'commons-codec', version: '1.11'
+    implementation group: 'net.portswigger.burp.extender', name: 'burp-extender-api', version: '2.3'
+    implementation group: 'io.vertx', name: 'vertx-web', version: '3.9.13'
+    implementation group: 'org.xerial', name: 'sqlite-jdbc', version: '3.18.0'
+    implementation group: 'commons-codec', name: 'commons-codec', version: '1.11'
 }
 
-sourceSets {
-    main {
-        java {
-            srcDir 'src/main/java'
-        }
-        resources {
-            srcDir 'src/main/resources'
-        }
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
     }
+}
+
+processResources {
+    duplicatesStrategy = 'exclude'
 }
 
 jar {
-    manifest {
+     duplicatesStrategy = 'exclude'
+     manifest {
         attributes('Main-Class': 'burp.BurpExtender')
     }
-    from configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    from configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
 }

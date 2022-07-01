@@ -9,13 +9,14 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.http.impl.HttpUtils;
+import io.vertx.core.net.impl.URIDecoder;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.impl.Utils;
 
 public class BackupFileHandler extends FileHandler {
 	@Override
 	public void handle(RoutingContext context) {
-		String path = Utils.removeDots(Utils.urlDecode(context.normalisedPath(), false));
+		String path = HttpUtils.removeDots(URIDecoder.decodeURIComponent(context.normalisedPath(), false));
 		if (path == null) {
 			context.fail(NOT_FOUND.code());
 			return;

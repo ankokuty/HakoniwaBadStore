@@ -47,16 +47,15 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.Cookie;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
-import io.vertx.ext.web.Cookie;
 import io.vertx.ext.web.FileUpload;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
-import io.vertx.ext.web.handler.CookieHandler;
 
 public class BadStore extends CGI {
 	int port;
@@ -105,7 +104,6 @@ public class BadStore extends CGI {
 		Router router = Router.router(vertx);
 		router.route().handler(logger);
 
-		router.route().handler(CookieHandler.create());
 		router.route().handler(BodyHandler.create(uploadTmpDir.getAbsolutePath()).setMergeFormAttributes(true));
 		router.route(HttpMethod.GET, "/cgi-bin/badstore.cgi").handler(context -> {
 			HttpServerResponse response = context.response();
@@ -229,6 +227,8 @@ public class BadStore extends CGI {
 					if (context.statusCode() == NOT_FOUND.code()) {
 						String path = request.uri();
 						response.setChunked(true);
+						response.putHeader("Server", "Server: Apache/1.3.28 (Unix) mod_ssl/2.8.15 OpenSSL/0.9.7c");
+						response.putHeader("Content-Type", "Content-Type: text/html; charset=iso-8859-1");
 						response.write("<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n");
 						response.write("<HTML><HEAD>\n");
 						response.write("<TITLE>404 Not Found</TITLE>\n");
@@ -240,8 +240,6 @@ public class BadStore extends CGI {
 						response.write("<ADDRESS>Apache/1.3.28 Server at " + simple_escape(host) + " Port "
 								+ Integer.toString(port) + "</ADDRESS>\n");
 						response.write("</BODY></HTML>\n");
-						response.putHeader("Server", "Server: Apache/1.3.28 (Unix) mod_ssl/2.8.15 OpenSSL/0.9.7c");
-						response.putHeader("Content-Type", "Content-Type: text/html; charset=iso-8859-1");
 						response.end();
 					} else {
 						context.next();
@@ -251,7 +249,7 @@ public class BadStore extends CGI {
 				throw new RuntimeException(e);
 			}
 		});
-		server.requestHandler(router::accept).listen(port, host, error);
+		server.requestHandler(router).listen(port, host, error);
 		System.err.println("Starting up badstore server on: http://" + host + ":" + port);
 	}
 
