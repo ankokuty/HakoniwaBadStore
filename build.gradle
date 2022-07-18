@@ -9,7 +9,7 @@ repositories {
 dependencies {
     implementation group: 'net.portswigger.burp.extender', name: 'burp-extender-api', version: '2.3'
     implementation group: 'io.vertx', name: 'vertx-web', version: '3.9.13'
-    implementation group: 'org.xerial', name: 'sqlite-jdbc', version: '3.18.0'
+    implementation group: 'org.xerial', name: 'sqlite-jdbc', version: '3.34.0'
     implementation group: 'commons-codec', name: 'commons-codec', version: '1.11'
 }
 
